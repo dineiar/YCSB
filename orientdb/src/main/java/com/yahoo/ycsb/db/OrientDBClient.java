@@ -34,6 +34,7 @@ import java.io.File;
 import java.util.*;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * OrientDB client for YCSB framework.
@@ -62,7 +63,12 @@ public class OrientDBClient extends DB {
   private static       boolean dbChecked = false;
   private static volatile OPartitionedDatabasePool databasePool;
   private static boolean initialized   = false;
-  private static int     clientCounter = 0;
+  
+  /**
+   * Count the number of times initialized to teardown on the last
+   * {@link #cleanup()}.
+   */
+  private static final AtomicInteger INIT_COUNT = new AtomicInteger(0);
 
   private boolean isRemote = false;
 
@@ -83,7 +89,7 @@ public class OrientDBClient extends DB {
 
     INIT_LOCK.lock();
     try {
-      clientCounter++;
+      INIT_COUNT.incrementAndGet();
       if (!initialized) {
         OGlobalConfiguration.dumpConfiguration(System.out);
 
@@ -174,12 +180,15 @@ public class OrientDBClient extends DB {
     return databasePool;
   }
 
+  /**
+   * Cleanup any state for this DB. Called once per DB instance; there is one DB
+   * instance per client thread.
+   */
   @Override
   public void cleanup() throws DBException {
     INIT_LOCK.lock();
     try {
-      clientCounter--;
-      if (clientCounter == 0) {
+      if (INIT_COUNT.decrementAndGet() == 0) {
         databasePool.close();
       }
 
